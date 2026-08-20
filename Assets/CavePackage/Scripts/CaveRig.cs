@@ -261,6 +261,16 @@ namespace CaveJazz.Calibration
         }
 
         /// <summary>
+        /// Todas as cameras sob a raiz, e nao apenas as cinco ligadas a faces. E este o
+        /// conjunto certo para mexer em culling mask: a CamSender nao alimenta face nenhuma
+        /// mas renderiza a cena com far clip 20000.
+        /// </summary>
+        public Camera[] GetRigCameras()
+        {
+            return GetComponentsInChildren<Camera>(true);
+        }
+
+        /// <summary>
         /// Casa cameras filhas com faces pelo nome da Render Texture e, em seguida, pelo
         /// nome da propria camera. Cameras sem correspondencia (CamSender, por exemplo)
         /// sao ignoradas de proposito.
