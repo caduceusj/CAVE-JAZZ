@@ -27,6 +27,33 @@ namespace CaveJazz.Calibration
         public bool hasQuaternions;
         public Quaternion localRotation = Quaternion.identity;
         public Quaternion worldRotation = Quaternion.identity;
+
+        public bool hasCameraLens;
+        public bool cameraPhysical;
+        public Vector2 sensorSize = new Vector2(36f, 24f);
+        public float focalLength = 50f;
+        public Vector2 lensShift;
+        public string gateFit;
+
+        public bool hasCameraClipping;
+        public float nearClip = 0.3f;
+        public float farClip = 1000f;
+        public float cameraDepth;
+
+        public bool hasCullingMask;
+        public int cullingMask = -1;
+
+        /// <summary>Nome da Render Texture no momento da captura. Informativo: nao e aplicado.</summary>
+        public string targetTextureName;
+
+        public bool hasRect;
+        public Vector2 sizeDelta;
+        public Vector2 anchorMin;
+        public Vector2 anchorMax;
+        public Vector2 pivot;
+        public Vector2 anchoredPosition;
+
+        public bool HasCamera => hasCameraLens || hasCameraClipping;
     }
 
     /// <summary>Um arquivo de snapshot inteiro, ja interpretado.</summary>
@@ -44,6 +71,64 @@ namespace CaveJazz.Calibration
 
         public string DisplayName =>
             string.IsNullOrEmpty(sourcePath) ? "(em memoria)" : System.IO.Path.GetFileName(sourcePath);
+    }
+
+    /// <summary>O que o apply deve escrever de volta na cena.</summary>
+    public struct SnapshotApplyOptions
+    {
+        public bool applyTransforms;
+
+        /// <summary>Posicao e rotacao em espaco de mundo. Escala e sempre local.</summary>
+        public bool useWorldSpace;
+
+        public bool applyScale;
+        public bool applyActiveState;
+        public bool applyCameraSettings;
+        public bool applyRectTransforms;
+        public bool includeInactive;
+        public int maxDepth;
+
+        public static SnapshotApplyOptions Default => new SnapshotApplyOptions
+        {
+            applyTransforms = true,
+            useWorldSpace = true,
+            applyScale = true,
+            // Desligado por padrao: aplicar um arquivo antigo poderia sumir com objetos.
+            applyActiveState = false,
+            applyCameraSettings = true,
+            applyRectTransforms = true,
+            includeInactive = true,
+            maxDepth = -1
+        };
+    }
+
+    /// <summary>Resultado de um apply: o que entrou, o que faltou e o que sobrou.</summary>
+    public class SnapshotApplyReport
+    {
+        public string sourceFile = string.Empty;
+        public string rootName = string.Empty;
+        public string space = string.Empty;
+
+        public int matched;
+        public int transformsApplied;
+        public int camerasApplied;
+        public int rectsApplied;
+        public int activeChanged;
+
+        /// <summary>Estava no arquivo e nao foi encontrado na cena.</summary>
+        public readonly List<string> missing = new List<string>();
+
+        /// <summary>Esta na cena e nao estava no arquivo; ficou como estava.</summary>
+        public readonly List<string> extra = new List<string>();
+
+        public readonly List<string> notes = new List<string>();
+
+        public string Summary =>
+            string.Format(CultureInfo.InvariantCulture,
+                "{0} objeto(s) encontrado(s), {1} transform(s), {2} camera(s), {3} rect(s), " +
+                "{4} ativo(s) alterado(s), {5} ausente(s), {6} nao registrado(s)",
+                matched, transformsApplied, camerasApplied, rectsApplied,
+                activeChanged, missing.Count, extra.Count);
     }
 
     /// <summary>Opcoes de captura, preenchidas pelo <see cref="CaveCalibrationSnapshot"/>.</summary>
@@ -92,8 +177,7 @@ namespace CaveJazz.Calibration
 
             List<Transform> ordered = new List<Transform>();
             Dictionary<Transform, string> paths = new Dictionary<Transform, string>();
-            HashSet<string> takenPaths = new HashSet<string>(StringComparer.Ordinal);
-            CollectHierarchy(options.root, string.Empty, 0, options, ordered, paths, takenPaths);
+            CollectHierarchy(options.root, options.includeInactive, options.maxDepth, ordered, paths);
 
             WriteHeader(sb, options, ordered.Count);
 
@@ -116,21 +200,34 @@ namespace CaveJazz.Calibration
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Percorre a hierarquia e devolve os transforms em ordem topo-para-baixo com o
+        /// caminho de cada um. Escrita e aplicacao usam este mesmo metodo de proposito: se
+        /// cada lado montasse os caminhos por conta propria, eles poderiam divergir e o
+        /// apply nao encontraria os objetos.
+        /// </summary>
+        public static void CollectHierarchy(Transform root, bool includeInactive, int maxDepth,
+            List<Transform> ordered, Dictionary<Transform, string> paths)
+        {
+            HashSet<string> takenPaths = new HashSet<string>(StringComparer.Ordinal);
+            CollectHierarchy(root, string.Empty, 0, includeInactive, maxDepth, ordered, paths, takenPaths);
+        }
+
         private static void CollectHierarchy(Transform current, string parentPath, int depth,
-            CaveSnapshotOptions options, List<Transform> ordered, Dictionary<Transform, string> paths,
-            HashSet<string> takenPaths)
+            bool includeInactive, int maxDepth, List<Transform> ordered,
+            Dictionary<Transform, string> paths, HashSet<string> takenPaths)
         {
             if (current == null)
             {
                 return;
             }
 
-            if (!options.includeInactive && !current.gameObject.activeInHierarchy)
+            if (!includeInactive && !current.gameObject.activeInHierarchy)
             {
                 return;
             }
 
-            if (options.maxDepth >= 0 && depth > options.maxDepth)
+            if (maxDepth >= 0 && depth > maxDepth)
             {
                 return;
             }
@@ -159,7 +256,8 @@ namespace CaveJazz.Calibration
             int childCount = current.childCount;
             for (int i = 0; i < childCount; i++)
             {
-                CollectHierarchy(current.GetChild(i), path, depth + 1, options, ordered, paths, takenPaths);
+                CollectHierarchy(current.GetChild(i), path, depth + 1, includeInactive, maxDepth,
+                    ordered, paths, takenPaths);
             }
         }
 
@@ -627,6 +725,14 @@ namespace CaveJazz.Calibration
                         current.hasQuaternions = true;
                     }
                 }
+                else if (trimmed.StartsWith("cam ", StringComparison.Ordinal))
+                {
+                    ReadCameraLine(current, trimmed);
+                }
+                else if (trimmed.StartsWith("rect ", StringComparison.Ordinal))
+                {
+                    ReadRectLine(current, trimmed);
+                }
             }
 
             return doc;
@@ -752,6 +858,388 @@ namespace CaveJazz.Calibration
         }
 
         private static Quaternion ToQuaternion(float[] v) => new Quaternion(v[0], v[1], v[2], v[3]);
+
+        /// <summary>
+        /// As tres linhas "cam" sao distinguidas pelo que carregam: lente, recorte ou alvo.
+        /// Cada uma marca sua propria flag, para o apply nunca escrever um campo que o
+        /// arquivo nao trazia.
+        /// </summary>
+        private static void ReadCameraLine(SnapshotEntry entry, string line)
+        {
+            if (TryReadWord(line, "physical", out string physical))
+            {
+                entry.hasCameraLens = true;
+                entry.cameraPhysical = string.Equals(physical, "on", StringComparison.Ordinal);
+
+                List<float[]> groups = ReadGroups(line);
+                if (groups.Count >= 2 && groups[0].Length == 2 && groups[1].Length == 2)
+                {
+                    entry.sensorSize = new Vector2(groups[0][0], groups[0][1]);
+                    entry.lensShift = new Vector2(groups[1][0], groups[1][1]);
+                }
+
+                if (TryReadNumber(line, "focal", out float focal))
+                {
+                    entry.focalLength = focal;
+                }
+
+                if (TryReadWord(line, "gate", out string gate))
+                {
+                    entry.gateFit = gate;
+                }
+
+                return;
+            }
+
+            if (TryReadNumber(line, "near", out float near))
+            {
+                entry.hasCameraClipping = true;
+                entry.nearClip = near;
+
+                if (TryReadNumber(line, "far", out float far))
+                {
+                    entry.farClip = far;
+                }
+
+                if (TryReadNumber(line, "depth", out float depth))
+                {
+                    entry.cameraDepth = depth;
+                }
+
+                if (TryReadWord(line, "mask", out string mask)
+                    && mask.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                    && uint.TryParse(mask.Substring(2), NumberStyles.HexNumber, Culture, out uint bits))
+                {
+                    entry.cullingMask = unchecked((int)bits);
+                    entry.hasCullingMask = true;
+                }
+
+                return;
+            }
+
+            if (TryReadWord(line, "target", out string target))
+            {
+                entry.targetTextureName = target;
+            }
+        }
+
+        private static void ReadRectLine(SnapshotEntry entry, string line)
+        {
+            List<float[]> groups = ReadGroups(line);
+            if (groups.Count < 5)
+            {
+                return;
+            }
+
+            for (int i = 0; i < 5; i++)
+            {
+                if (groups[i].Length != 2)
+                {
+                    return;
+                }
+            }
+
+            entry.hasRect = true;
+            entry.sizeDelta = new Vector2(groups[0][0], groups[0][1]);
+            entry.anchorMin = new Vector2(groups[1][0], groups[1][1]);
+            entry.anchorMax = new Vector2(groups[2][0], groups[2][1]);
+            entry.pivot = new Vector2(groups[3][0], groups[3][1]);
+            entry.anchoredPosition = new Vector2(groups[4][0], groups[4][1]);
+        }
+
+        /// <summary>Le o token seguinte a uma chave, como "focal" em "focal 1294.06".</summary>
+        private static bool TryReadNumber(string line, string key, out float value)
+        {
+            value = 0f;
+            return TryReadWord(line, key, out string word)
+                   && float.TryParse(word, NumberStyles.Float, Culture, out value);
+        }
+
+        private static bool TryReadWord(string line, string key, out string value)
+        {
+            value = null;
+            string[] parts = line.Split(WordSeparators, StringSplitOptions.RemoveEmptyEntries);
+
+            for (int i = 0; i < parts.Length - 1; i++)
+            {
+                if (string.Equals(parts[i], key, StringComparison.Ordinal))
+                {
+                    value = parts[i + 1];
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static readonly char[] WordSeparators = { ' ', '\t' };
+
+        // ==================================================================== aplicacao
+
+        /// <summary>
+        /// Escreve de volta na cena o que o arquivo registrou, casando os objetos pelo
+        /// caminho na hierarquia.
+        ///
+        /// Percorre na ordem do arquivo, que e topo-para-baixo: e isso que faz o espaco de
+        /// mundo funcionar, porque o pai ja esta no lugar quando o filho e escrito.
+        ///
+        /// <paramref name="recordUndo"/> e chamado antes de cada objeto ser alterado. No
+        /// editor passe <c>obj => Undo.RecordObject(obj, "...")</c>; em runtime deixe nulo.
+        /// </summary>
+        public static SnapshotApplyReport Apply(SnapshotDocument document, Transform root,
+            SnapshotApplyOptions options, Action<UnityEngine.Object> recordUndo = null)
+        {
+            if (document == null)
+            {
+                throw new ArgumentNullException(nameof(document));
+            }
+
+            if (root == null)
+            {
+                throw new ArgumentNullException(nameof(root));
+            }
+
+            SnapshotApplyReport report = new SnapshotApplyReport
+            {
+                sourceFile = document.DisplayName,
+                rootName = root.name,
+                space = options.useWorldSpace ? "world" : "local"
+            };
+
+            List<Transform> ordered = new List<Transform>();
+            Dictionary<Transform, string> paths = new Dictionary<Transform, string>();
+            CollectHierarchy(root, options.includeInactive, options.maxDepth, ordered, paths);
+
+            Dictionary<string, Transform> live = new Dictionary<string, Transform>(StringComparer.Ordinal);
+            foreach (KeyValuePair<Transform, string> pair in paths)
+            {
+                live[pair.Value] = pair.Key;
+            }
+
+            // Um rename da raiz invalidaria o arquivo inteiro, entao o primeiro segmento do
+            // caminho e remapeado. Serve tambem para aplicar num objeto duplicado.
+            string documentRoot = document.entries.Count > 0
+                ? FirstSegment(document.entries[0].path)
+                : null;
+
+            bool remapRoot = !string.IsNullOrEmpty(documentRoot)
+                             && !string.Equals(documentRoot, root.name, StringComparison.Ordinal);
+
+            if (remapRoot)
+            {
+                report.notes.Add("Raiz do arquivo \"" + documentRoot + "\" remapeada para \"" + root.name + "\".");
+            }
+
+            HashSet<string> matched = new HashSet<string>(StringComparer.Ordinal);
+
+            for (int i = 0; i < document.entries.Count; i++)
+            {
+                SnapshotEntry entry = document.entries[i];
+                string path = remapRoot ? RemapRoot(entry.path, documentRoot, root.name) : entry.path;
+
+                if (!live.TryGetValue(path, out Transform target))
+                {
+                    report.missing.Add(entry.path);
+                    continue;
+                }
+
+                matched.Add(path);
+                report.matched++;
+                ApplyEntry(entry, target, options, recordUndo, report);
+            }
+
+            foreach (KeyValuePair<string, Transform> pair in live)
+            {
+                if (!matched.Contains(pair.Key))
+                {
+                    report.extra.Add(pair.Key);
+                }
+            }
+
+            report.extra.Sort(StringComparer.Ordinal);
+            return report;
+        }
+
+        private static void ApplyEntry(SnapshotEntry entry, Transform target,
+            SnapshotApplyOptions options, Action<UnityEngine.Object> recordUndo, SnapshotApplyReport report)
+        {
+            if (options.applyActiveState && target.gameObject.activeSelf != entry.active)
+            {
+                recordUndo?.Invoke(target.gameObject);
+                target.gameObject.SetActive(entry.active);
+                report.activeChanged++;
+            }
+
+            if (options.applyTransforms && (entry.hasLocal || entry.hasWorld))
+            {
+                recordUndo?.Invoke(target);
+
+                if (options.useWorldSpace && entry.hasWorld)
+                {
+                    target.position = entry.worldPosition;
+                    target.rotation = entry.hasQuaternions
+                        ? entry.worldRotation
+                        : Quaternion.Euler(entry.worldEuler);
+                }
+                else if (entry.hasLocal)
+                {
+                    target.localPosition = entry.localPosition;
+                    target.localRotation = entry.hasQuaternions
+                        ? entry.localRotation
+                        : Quaternion.Euler(entry.localEuler);
+                }
+
+                // Escala so tem setter local: lossyScale e somente leitura no Unity.
+                if (options.applyScale && entry.hasLocal)
+                {
+                    target.localScale = entry.localScale;
+                }
+
+                report.transformsApplied++;
+            }
+
+            if (options.applyCameraSettings && entry.HasCamera)
+            {
+                Camera camera = target.GetComponent<Camera>();
+                if (camera != null)
+                {
+                    recordUndo?.Invoke(camera);
+                    ApplyCamera(entry, camera);
+                    report.camerasApplied++;
+                    NoteTargetTexture(entry, camera, report);
+                }
+            }
+
+            // Depois do bloco de transform de proposito: num RectTransform e o
+            // anchoredPosition que manda, e ele recalcula a posicao.
+            if (options.applyRectTransforms && entry.hasRect && target is RectTransform rect)
+            {
+                recordUndo?.Invoke(rect);
+                rect.anchorMin = entry.anchorMin;
+                rect.anchorMax = entry.anchorMax;
+                rect.pivot = entry.pivot;
+                rect.sizeDelta = entry.sizeDelta;
+                rect.anchoredPosition = entry.anchoredPosition;
+                report.rectsApplied++;
+            }
+        }
+
+        private static void ApplyCamera(SnapshotEntry entry, Camera camera)
+        {
+            if (entry.hasCameraLens)
+            {
+                camera.usePhysicalProperties = entry.cameraPhysical;
+
+                // Gate fit antes do sensor: ele decide como sensor e focal se combinam.
+                if (!string.IsNullOrEmpty(entry.gateFit)
+                    && Enum.TryParse<Camera.GateFitMode>(entry.gateFit, false, out Camera.GateFitMode gate))
+                {
+                    camera.gateFit = gate;
+                }
+
+                if (entry.cameraPhysical)
+                {
+                    camera.sensorSize = entry.sensorSize;
+                    camera.focalLength = entry.focalLength;
+                    camera.lensShift = entry.lensShift;
+                }
+            }
+
+            if (entry.hasCameraClipping)
+            {
+                camera.nearClipPlane = entry.nearClip;
+                camera.farClipPlane = entry.farClip;
+                camera.depth = entry.cameraDepth;
+            }
+
+            if (entry.hasCullingMask)
+            {
+                camera.cullingMask = entry.cullingMask;
+            }
+        }
+
+        /// <summary>
+        /// A Render Texture e uma referencia de asset, nao um valor: o arquivo guarda so o
+        /// nome. Em vez de adivinhar qual asset e, avisa quando o que esta ligado difere.
+        /// </summary>
+        private static void NoteTargetTexture(SnapshotEntry entry, Camera camera, SnapshotApplyReport report)
+        {
+            if (string.IsNullOrEmpty(entry.targetTextureName)
+                || string.Equals(entry.targetTextureName, "(nenhum)", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            RenderTexture current = camera.targetTexture;
+            if (current != null && string.Equals(current.name, entry.targetTextureName, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            report.notes.Add(camera.name + ": o arquivo registra a Render Texture \""
+                             + entry.targetTextureName + "\", que nao e aplicada. Ligue a mao se precisar.");
+        }
+
+        private static string FirstSegment(string path)
+        {
+            int slash = path.IndexOf('/');
+            return slash < 0 ? path : path.Substring(0, slash);
+        }
+
+        private static string RemapRoot(string path, string from, string to)
+        {
+            if (string.Equals(path, from, StringComparison.Ordinal))
+            {
+                return to;
+            }
+
+            return path.StartsWith(from + "/", StringComparison.Ordinal)
+                ? to + path.Substring(from.Length)
+                : path;
+        }
+
+        /// <summary>Relatorio do apply, no mesmo formato dos outros arquivos.</summary>
+        public static string DescribeApply(SnapshotApplyReport report)
+        {
+            StringBuilder sb = new StringBuilder(2048);
+
+            sb.AppendLine(MajorRule);
+            sb.AppendLine(" CAVE SNAPSHOT APLICADO");
+            sb.AppendLine(MajorRule);
+            sb.AppendLine(Field("Gerado", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", Culture)));
+            sb.AppendLine(Field("Arquivo", report.sourceFile));
+            sb.AppendLine(Field("Raiz", report.rootName));
+            sb.AppendLine(Field("Espaco", report.space));
+            sb.AppendLine(MinorRule);
+            sb.AppendLine(Field("Encontrados", report.matched.ToString(Culture)));
+            sb.AppendLine(Field("Transforms", report.transformsApplied.ToString(Culture)));
+            sb.AppendLine(Field("Cameras", report.camerasApplied.ToString(Culture)));
+            sb.AppendLine(Field("RectTransforms", report.rectsApplied.ToString(Culture)));
+            sb.AppendLine(Field("Ativo alterado", report.activeChanged.ToString(Culture)));
+
+            AppendList(sb, "NO ARQUIVO, AUSENTES NA CENA", report.missing);
+            AppendList(sb, "NA CENA, AUSENTES NO ARQUIVO", report.extra);
+            AppendList(sb, "AVISOS", report.notes);
+
+            sb.AppendLine(MajorRule);
+            return sb.ToString();
+        }
+
+        private static void AppendList(StringBuilder sb, string title, List<string> items)
+        {
+            if (items.Count == 0)
+            {
+                return;
+            }
+
+            sb.AppendLine(MinorRule);
+            sb.AppendLine(" " + title + " (" + items.Count.ToString(Culture) + ")");
+
+            for (int i = 0; i < items.Count; i++)
+            {
+                sb.AppendLine("   " + items[i]);
+            }
+        }
 
         // ==================================================================== diff
 

@@ -60,6 +60,24 @@ namespace CaveJazz.Calibration
         [Min(-1)]
         public int maxDepth = -1;
 
+        [Header("Aplicar")]
+        [Tooltip("Escreve posicao e rotacao de volta nos objetos.")]
+        public bool applyTransforms = true;
+
+        [Tooltip("Aplica posicao e rotacao em espaco de mundo. Desligado, usa o espaco local. " +
+                 "Escala e sempre local: o Unity nao tem setter de escala global.")]
+        public bool applyInWorldSpace = true;
+
+        public bool applyScale = true;
+
+        [Tooltip("Desligado por padrao: aplicar um arquivo antigo poderia sumir com objetos.")]
+        public bool applyActiveState;
+
+        [Tooltip("Escreve sensor, focal, lens shift, gate fit, recorte e culling mask das cameras.")]
+        public bool applyCameraSettings = true;
+
+        public bool applyRectTransformSettings = true;
+
         [Header("Tolerancias do diff")]
         [Min(0f)] public float positionTolerance = 0.001f;
         [Min(0f)] public float angleTolerance = 0.01f;
@@ -201,6 +219,35 @@ namespace CaveJazz.Calibration
 #else
             return FindObjectOfType<CaveRig>(true);
 #endif
+        }
+
+        // ------------------------------------------------------------------ aplicar
+
+        public SnapshotApplyOptions BuildApplyOptions()
+        {
+            return new SnapshotApplyOptions
+            {
+                applyTransforms = applyTransforms,
+                useWorldSpace = applyInWorldSpace,
+                applyScale = applyScale,
+                applyActiveState = applyActiveState,
+                applyCameraSettings = applyCameraSettings,
+                applyRectTransforms = applyRectTransformSettings,
+                includeInactive = includeInactive,
+                maxDepth = maxDepth
+            };
+        }
+
+        /// <summary>
+        /// Le um TXT gravado antes e escreve os valores de volta no alvo e nos filhos dele.
+        /// <paramref name="recordUndo"/> e chamado antes de cada objeto mudar; no editor,
+        /// passe <c>obj => Undo.RecordObject(obj, "...")</c>.
+        /// </summary>
+        public SnapshotApplyReport ApplyFromFile(string snapshotPath,
+            Action<UnityEngine.Object> recordUndo = null)
+        {
+            SnapshotDocument document = LoadDocument(snapshotPath);
+            return CaveSnapshotFormat.Apply(document, ResolvedTarget, BuildApplyOptions(), recordUndo);
         }
 
         // ------------------------------------------------------------------ diff

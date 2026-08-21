@@ -292,9 +292,17 @@ namespace CaveJazz.Calibration.EditorTools
                 }
             }
 
-            if (GUILayout.Button("Comparar com snapshot..."))
+            using (new EditorGUILayout.HorizontalScope())
             {
-                Compare(snapshot);
+                if (GUILayout.Button("Comparar com snapshot..."))
+                {
+                    Compare(snapshot);
+                }
+
+                if (GUILayout.Button("Aplicar snapshot..."))
+                {
+                    Apply(snapshot);
+                }
             }
 
             if (HasLastSnapshot(snapshot))
@@ -353,6 +361,89 @@ namespace CaveJazz.Calibration.EditorTools
             {
                 Debug.LogError("[CAVE] Falha ao comparar snapshots: " + exception.Message, snapshot);
             }
+        }
+
+        /// <summary>
+        /// Le um TXT gravado antes e escreve os valores de volta. O dialogo diz exatamente
+        /// o que vai e o que nao vai ser escrito, antes de encostar em qualquer objeto.
+        /// </summary>
+        public static void Apply(CaveCalibrationSnapshot snapshot)
+        {
+            string startFolder = snapshot.ResolveOutputFolder();
+            if (!System.IO.Directory.Exists(startFolder))
+            {
+                startFolder = Application.dataPath;
+            }
+
+            string path = EditorUtility.OpenFilePanel("Snapshot para aplicar", startFolder, "txt");
+            if (string.IsNullOrEmpty(path))
+            {
+                return;
+            }
+
+            try
+            {
+                SnapshotDocument document = CaveCalibrationSnapshot.LoadDocument(path);
+                Transform root = snapshot.ResolvedTarget;
+
+                if (!EditorUtility.DisplayDialog("Aplicar snapshot",
+                        DescribePlan(document, root, snapshot.BuildApplyOptions()), "Aplicar", "Cancelar"))
+                {
+                    return;
+                }
+
+                SnapshotApplyReport report = ApplyWithUndo(document, root, snapshot.BuildApplyOptions());
+                Debug.Log("[CAVE] Snapshot aplicado: " + report.Summary + "\n\n"
+                          + CaveSnapshotFormat.DescribeApply(report), root);
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogError("[CAVE] Falha ao aplicar o snapshot: " + exception.Message, snapshot);
+            }
+        }
+
+        /// <summary>Aplica registrando Undo em cada objeto antes de ele mudar.</summary>
+        public static SnapshotApplyReport ApplyWithUndo(SnapshotDocument document, Transform root,
+            SnapshotApplyOptions options)
+        {
+            const string label = "Aplicar snapshot da CAVE";
+
+            Undo.SetCurrentGroupName(label);
+            int undoGroup = Undo.GetCurrentGroup();
+
+            SnapshotApplyReport report = CaveSnapshotFormat.Apply(document, root, options,
+                target => Undo.RecordObject(target, label));
+
+            Undo.CollapseUndoOperations(undoGroup);
+            SceneView.RepaintAll();
+
+            return report;
+        }
+
+        /// <summary>Texto do dialogo: o que sera escrito e o que nao sera.</summary>
+        public static string DescribePlan(SnapshotDocument document, Transform root,
+            SnapshotApplyOptions options)
+        {
+            List<string> writes = new List<string>();
+            List<string> skips = new List<string>();
+
+            (options.applyTransforms ? writes : skips).Add(
+                "posicao e rotacao (" + (options.useWorldSpace ? "world" : "local") + ")");
+            (options.applyScale ? writes : skips).Add("escala (sempre local)");
+            (options.applyCameraSettings ? writes : skips).Add("configuracoes de camera");
+            (options.applyRectTransforms ? writes : skips).Add("RectTransform");
+            (options.applyActiveState ? writes : skips).Add("estado ativo");
+            skips.Add("referencias de Render Texture");
+
+            string text = "Arquivo: " + document.DisplayName + "\n"
+                          + "Capturado em: " + document.date + "\n"
+                          + "Objetos no arquivo: " + document.entries.Count + "\n\n"
+                          + "Alvo: " + root.name + " e os filhos dele\n\n"
+                          + "Vai escrever: " + string.Join(", ", writes) + "\n"
+                          + "Nao vai escrever: " + string.Join(", ", skips) + "\n\n"
+                          + "Desfeito de uma vez com Ctrl+Z.";
+
+            return text;
         }
 
         private static string FormatVector(Vector3 value)
