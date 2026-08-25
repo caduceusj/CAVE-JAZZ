@@ -193,6 +193,14 @@
       },
       "url": "https://packages.unity.com"
     },
+    "jp.keijiro.klak.spout": {
+      "version": "file:C:/Users/Imersiva/Downloads/KlakSpout-main/Packages/jp.keijiro.klak.spout",
+      "depth": 0,
+      "source": "local",
+      "dependencies": {
+        "com.unity.modules.screencapture": "1.0.0"
+      }
+    },
     "com.unity.modules.accessibility": {
       "version": "1.0.0",
       "depth": 0,
