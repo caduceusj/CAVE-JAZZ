@@ -9,6 +9,8 @@ Pacote da CAVE de 5 superfícies (4 paredes + piso) que sai pelo Spout num atlas
 | `Scripts/CaveSurface.cs` | Geometria da sala, orientação de cada superfície no atlas, matriz de projeção |
 | `Scripts/CaveCalibrationGrid.cs` | Grade de calibração (sobre as superfícies e "além" das paredes) |
 | `Scripts/CaveDayNightLighting.cs` | Dia/noite "estilo Hollywood" (noite azulada, mas clara) |
+| `Scripts/CaveVolumePresetSwitcher.cs` | Troca o perfil do Global Volume pelo teclado para comparar looks na sala |
+| `VolumePresets/` | 6 perfis de pós-processamento ajustados para CAVE de projeção + 1 perfil "cru" |
 | `CaveRoot.prefab` | Câmeras + `CaveRig` já configurado |
 | `CanvasAligned.prefab` | Compositor antigo (canvas). Fica desligado enquanto o `CaveRig` roda |
 
@@ -88,16 +90,17 @@ volume). Com a sala-exemplo de 4,5 × 8,4 m, hoje ficam dentro dela os *Table Se
 
 1. **Tonemapping ACES aplicado duas vezes**, e sobre buffer LDR: cada câmera da CAVE aplicava
    ACES (com HDR desligado, ou seja, tudo acima de 1 já estourado) e a `CamSender` aplicava **de
-   novo** sobre o atlas pronto (mais vinheta e bloom). Resultado medido com a curva ACES do URP:
+   novo** sobre o atlas pronto (mais vinheta e bloom). Resultado calculado com a implementação
+   ACES do URP 17.3 (`Color.hlsl`/`ACES.hlsl`, branch 6000.3):
 
-   | luz na cena (linear) | antes (2× ACES, LDR) | depois (1× ACES, HDR) | depois + 0,5 EV (aplicado) |
+   | luz na cena (linear) | antes (2× ACES, LDR) | depois (1× ACES, HDR) | depois + 0,5 EV |
    | --- | --- | --- | --- |
-   | 0,05 (sombra) | 11/255 | 33/255 | 45/255 |
-   | 0,18 (cinza médio) | **63/255** | 92/255 | **116/255** |
-   | 1,0 (branco) | 182/255 | 208/255 | 221/255 |
-   | 4,0 (lâmpada) | **182/255** (teto) | 241/255 | 244/255 |
+   | 0,05 (sombra) | 8/255 | 33/255 | 45/255 |
+   | 0,18 (cinza médio) | **65/255** | 93/255 | **117/255** |
+   | 1,0 (branco) | 181/255 | 207/255 | 221/255 |
+   | 4,0 (lâmpada) | **181/255** (teto) | 245/255 | 248/255 |
 
-   Antes, **nenhum pixel da CAVE passava de 182/255** (71% de cinza).
+   Antes, **nenhum pixel da CAVE passava de 181/255** (71% de cinza).
 2. **Vinheta em cada parede**: escurecia as bordas de cada superfície, ou seja, justamente as
    quinas. Desligada no `SampleSceneProfile`.
 3. **Spots principais não iluminavam nada**: "Singer" (intensidade 51,45) e "Sofa" (12,55) estavam
@@ -107,7 +110,8 @@ volume). Com a sala-exemplo de 4,5 × 8,4 m, hoje ficam dentro dela os *Table Se
 5. **SSAO** (renderer `PC_Renderer`): escurece e, por ser calculado por câmera, cria uma costura de
    brilho nas quinas. Desligado. (Se quiser AO, prefira AO assado nas texturas/lightmaps.)
 6. **Exposição**: `Color Adjustments → Post Exposure = +0,5 EV` no `SampleSceneProfile`
-   (cinza médio 63 → 116/255). Ajuste a gosto — é o botão certo para "mais luz nos olhos".
+   (cinza médio 65 → 117/255). Ajuste a gosto — é o botão certo para "mais luz nos olhos".
+   Para comparar alternativas na sala, use os presets da seção 4.
 
 ---
 
@@ -171,7 +175,69 @@ ambiente em gradiente céu/horizonte/chão, neblina e, opcionalmente, o peso de 
 
 ---
 
-## 4. Checklist para testar no Unity
+## 4. Presets de pós-processamento para testar na sala
+
+O `Global Volume` da `BaseScene` tem um `CaveVolumePresetSwitcher` com 6 perfis feitos para CAVE
+de projeção (`VolumePresets/`) mais o perfil original. Em Play Mode:
+
+| Tecla | Ação |
+| --- | --- |
+| `1` … `7` | escolhe o preset |
+| `0` | imagem crua, sem pós-processamento (liga/desliga) — referência/diagnóstico |
+| `PgDn` / `]` · `PgUp` / `[` | próximo / anterior |
+| `+` / `−` | ajuste fino de exposição em passos de 0,25 EV (não altera os assets) |
+| `Backspace` | zera o ajuste de exposição |
+| `H` | mostra/oculta o rótulo |
+
+O rótulo com o nome do preset aparece **só no monitor do operador** (Game view), nunca nas
+paredes. Cada troca também vai para o Console.
+
+| # | Preset | Tonemap | Exposição | Contraste | Saturação | Extras | Cinza médio: tela / na sala* |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | **ACES Claro** (padrão) | ACES | +1,0 EV | +8 | +18 | matiz −3, sombras levantadas (SMH +0,06), bloom suave | 144 / 159 |
+| 2 | Neutro Claro | Neutral | +0,6 | +15 | +15 | cores mais fiéis, bloom mínimo | 141 / 156 |
+| 3 | Vívido p/ projeção | Neutral | +0,75 | +28 | +32 | meios-tons mais claros (gamma +0,08) | 156 / 172 |
+| 4 | Noite Hollywood | ACES | +0,75 | +10 | +8 | WB −20/−4, sombras azuis e altas luzes quentes (split toning), bloom quente | 132 / 147 |
+| 5 | Cor cheia (toon) | nenhum | +0,4 | +10 | +30 | sem bloom; luzes fortes estouram de propósito (visual "cartoon", cor chapada) | 134 / 149 |
+| 6 | Quente (projetor frio) | Neutral | +0,75 | +12 | +15 | WB +12, para projetor azulado | 147 / 163 |
+| 7 | Original (`SampleSceneProfile`) | ACES | +0,5 | 0 | +24,2 | bloom forte (intensidade 1, que com HDR ligado pesa mais) | 117 / 130 |
+
+\* Valores em código sRGB (0–255) para uma superfície cinza médio (0,18), calculados com a
+implementação do URP 17.3. "Na sala" soma um véu de 25% da luz média que rebate entre paredes e
+piso — o modelo simples usado para ajustar os presets.
+
+**Por que estes valores (o que é específico de CAVE):**
+
+* **Nada de efeito de lente.** Vinheta, profundidade de campo, motion blur, aberração cromática,
+  distorção, grão e lens flare são calculados por câmera, então quebram a continuidade entre as
+  paredes. A vinheta é zerada explicitamente em todos os presets.
+* **Bloom suave e com limiar alto.** Cada parede é uma câmera, então o halo é cortado na quina. A
+  própria sala já espalha luz.
+* **Mais exposição e sombras levantadas.** A luz que rebate entre as superfícies cobre os pretos com
+  um véu. No modelo, o contraste real cai para ~13–19:1 e detalhes abaixo de ~25/255 somem. Por isso
+  os presets ACES levantam as sombras e os Neutral já têm o pé da curva mais alto.
+* **Um pouco mais de saturação.** O véu também dessatura. Os presets compensam com +8 a +32.
+* **Presets autocontidos.** O `PC_RPAsset` usa o `SampleSceneProfile` como perfil base do pipeline.
+  Tudo que um preset não sobrescreve vem dele, então todos sobrescrevem tonemapping, ajustes de cor,
+  bloom e vinheta.
+
+**Roteiro de teste na sala**
+
+1. Sala no escuro, de preferência com pessoas dentro, olhando do ponto do público.
+2. Para cada preset, olhe: rostos (Ella e Louis), sombras sob as mesas, o veludo vermelho, o halo
+   das lâmpadas, as quinas e o piso.
+3. Se um preset estiver quase bom, ajuste com `+`/`−` e anote o valor que aparece no rótulo.
+4. Para fixar: no `Global Volume`, escolha o `index` do `CaveVolumePresetSwitcher` em Edit Mode
+   (vira o padrão salvo na cena). Some o ajuste anotado ao *Post Exposure* do asset do preset.
+5. Os assets são editáveis no Inspector como qualquer Volume Profile. Para criar uma variação,
+   duplique um preset e adicione-o à lista `presets`.
+
+Para usar em outro projeto: adicione o `CaveVolumePresetSwitcher` ao Global Volume da cena e
+arraste os perfis de `VolumePresets/` para a lista (o `CAVE_0_Cru_SemPos` vai em `rawProfile`).
+
+---
+
+## 5. Checklist para testar no Unity
 
 - [ ] Abrir a `BaseScene`, selecionar o `CaveRoot` e ver o gizmo (caixa branca = sala, esfera
       amarela = olhos, linhas coloridas = frustums, retângulo ciano = corte do piso).
@@ -180,9 +246,9 @@ ambiente em gradiente céu/horizonte/chão, neblina e, opcionalmente, o peso de 
       esquerda girada 90° anti-horário, direita 90° horário), com cantos pretos.
 - [ ] Ligar o `CaveCalibrationGrid` e conferir as quinas na sala real.
 - [ ] Conferir no receptor do Spout que a imagem chega com 3270 × 4500.
-- [ ] Ajustar `Post Exposure` no `SampleSceneProfile` olhando a projeção na sala.
+- [ ] Comparar os presets de pós-processamento com as teclas `1`–`7` (seção 4).
 
-## 5. Notas técnicas
+## 6. Notas técnicas
 
 * Cada câmera renderiza numa textura com o **tamanho exato** da sua região do atlas (formato igual
   ao da `RT_Send`) e o rig copia com `Graphics.CopyTexture` no fim do frame: cópia byte a byte, sem
@@ -191,6 +257,9 @@ ambiente em gradiente céu/horizonte/chão, neblina e, opcionalmente, o peso de 
   imagem: frontal (cima = teto), traseira (cima = piso), esquerda/direita (cima = frontal),
   piso (cima = frontal). Validado numericamente contra o pipeline antigo (mesma orientação nas 5
   faces) e contra a interseção física raio/parede (erro < 1e-9 px).
+* Os presets de volume foram escritos com os GUIDs e campos dos overrides do URP 17.3 (branch
+  6000.3 do repositório Graphics). O `CaveVolumePresetSwitcher` usa o Input System novo (o projeto
+  está com *Active Input Handling = Input System*) e tem caminho alternativo para o Input legado.
 * Ainda **não testado dentro do Unity** por quem escreveu: o código foi compilado contra as DLLs de
   referência do Unity (player e editor) e a matemática foi validada fora dele. Primeiro Play deve
   ser feito com o checklist acima.

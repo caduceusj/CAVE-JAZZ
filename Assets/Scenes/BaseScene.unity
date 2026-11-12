@@ -5966,6 +5966,7 @@ GameObject:
   m_Component:
   - component: {fileID: 832575519}
   - component: {fileID: 832575518}
+  - component: {fileID: 768923805892877011}
   m_Layer: 0
   m_Name: Global Volume
   m_TagString: Untagged
@@ -5989,7 +5990,35 @@ MonoBehaviour:
   priority: 0
   blendDistance: 0
   weight: 1
-  sharedProfile: {fileID: 11400000, guid: 10fc4df2da32a41aaa32d77bc913491c, type: 2}
+  sharedProfile: {fileID: 11400000, guid: 7e60f8f33b4140c6f71f2f1d351fca73, type: 2}
+--- !u!114 &768923805892877011
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 832575517}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f05c45f53f14442faeff8dd1f6c94669, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  volume: {fileID: 832575518}
+  presets:
+  - {fileID: 11400000, guid: 7e60f8f33b4140c6f71f2f1d351fca73, type: 2}
+  - {fileID: 11400000, guid: 3ff5eef9dc979a26dcec557eb0120afc, type: 2}
+  - {fileID: 11400000, guid: f751440c53c4aceffba21fac9f63e318, type: 2}
+  - {fileID: 11400000, guid: 33f45b161141ee156e449d562bc647ba, type: 2}
+  - {fileID: 11400000, guid: 480af2203addb68043475b3669f6aeea, type: 2}
+  - {fileID: 11400000, guid: 78eda8a89ae1bf9f3df95bd1898019e2, type: 2}
+  - {fileID: 11400000, guid: 10fc4df2da32a41aaa32d77bc913491c, type: 2}
+  index: 0
+  rawProfile: {fileID: 11400000, guid: fa4f03229aa36a67f50c37993ff3f089, type: 2}
+  keyboardShortcuts: 1
+  exposureStep: 0.25
+  showLabel: 1
+  labelSeconds: 5
+  rememberLastChoice: 0
 --- !u!4 &832575519
 Transform:
   m_ObjectHideFlags: 0
