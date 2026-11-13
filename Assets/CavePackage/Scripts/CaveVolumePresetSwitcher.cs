@@ -21,7 +21,10 @@ namespace CavePackage
     ///   Backspace    zera o ajuste de exposição
     ///   H            mostra/oculta o rótulo
     /// O rótulo é desenhado só no monitor do operador (OnGUI), nunca nas paredes da CAVE.
-    /// Em Edit Mode, o preset escolhido no campo "index" é aplicado ao Volume e fica salvo na cena.
+    ///
+    /// Quem manda é o perfil que está no Volume: arrastar um preset direto para o Volume funciona e o
+    /// "index" passa a apontar para ele. Mudar o "index" no Inspector aplica o preset ao Volume.
+    /// Os dois ficam salvos na cena.
     /// </summary>
     [ExecuteAlways]
     [DisallowMultipleComponent]
@@ -58,6 +61,7 @@ namespace CavePackage
 
         const string PrefKey = "CavePackage.VolumePreset";
 
+        bool _initialized;
         bool _raw;
         float _exposureOffset;
         float _labelUntil;
@@ -81,9 +85,18 @@ namespace CavePackage
         void OnEnable()
         {
             if (volume == null) volume = GetComponent<Volume>();
-            if (Application.isPlaying && rememberLastChoice && presets != null && presets.Length > 0)
+            if (Application.isPlaying && rememberLastChoice && presets != null && presets.Length > 0 &&
+                PlayerPrefs.HasKey(PrefKey))
+            {
                 index = Mathf.Clamp(PlayerPrefs.GetInt(PrefKey, index), 0, presets.Length - 1);
-            ApplyProfile();
+                ApplyProfile();
+            }
+            else if (!SyncIndexFromVolume() && volume != null && volume.sharedProfile == null)
+            {
+                // Volume sem perfil: começa no preset do índice. Um perfil próprio (fora da lista) é respeitado.
+                ApplyProfile();
+            }
+            _initialized = true;
         }
 
         void OnDisable()
@@ -95,6 +108,8 @@ namespace CavePackage
         {
             if (presets != null && presets.Length > 0) index = Mathf.Clamp(index, 0, presets.Length - 1);
             else index = 0;
+            // Carregando a cena: quem manda é o perfil salvo no Volume (o OnEnable sincroniza o índice).
+            if (!_initialized) return;
 #if UNITY_EDITOR
             if (!Application.isPlaying)
             {
@@ -120,7 +135,39 @@ namespace CavePackage
 
         void Update()
         {
+            // Trocaram o perfil direto no Volume (Inspector)? O índice acompanha, em vez de brigar com a escolha.
+            if (!_raw && volume != null && volume.sharedProfile != CurrentPreset)
+            {
+                int before = index;
+                if (SyncIndexFromVolume() && index != before)
+                {
+#if UNITY_EDITOR
+                    if (!Application.isPlaying) EditorUtility.SetDirty(this);
+#endif
+                    if (Application.isPlaying)
+                    {
+                        UpdateExposureNudge();
+                        Announce();
+                    }
+                }
+            }
+
             if (Application.isPlaying && keyboardShortcuts) HandleKeys();
+        }
+
+        /// <summary>Se o perfil atual do Volume é um dos presets, aponta o índice para ele.</summary>
+        bool SyncIndexFromVolume()
+        {
+            if (volume == null || presets == null || volume.sharedProfile == null) return false;
+            for (int i = 0; i < presets.Length; i++)
+            {
+                if (presets[i] == volume.sharedProfile)
+                {
+                    index = i;
+                    return true;
+                }
+            }
+            return false;
         }
 
         // ================================================================== API pública

@@ -119,8 +119,11 @@ volume). Com a sala-exemplo de 4,5 × 8,4 m, hoje ficam dentro dela os *Table Se
 
 O `CaveRig` fica no `CaveRoot`. **O transform do `CaveRoot` é o centro do piso físico** dentro do
 mundo virtual; o eixo +Z aponta para a parede frontal. Na `BaseScene` ele está em
-`(1,435; 2,9; -2,091)`: mesma posição horizontal que a equipe já usava, agora **no piso do clube**
-(topo dos cubos `Flor1/Flor2`).
+`(1,868; 3,639; 0,573)`, posição escolhida pela equipe. O piso do clube (topo dos cubos
+`Flor1/Flor2`) fica em y = 2,9, então **o piso físico está 74 cm acima do chão virtual**. O público
+vê o salão como se estivesse numa plataforma: o olho fica 2,34 m acima do chão do clube e o piso
+projetado mostra o chão 74 cm "abaixo". Para ficar na altura do salão, use y = 2,9. Para só subir o
+ponto de vista mantendo o chão colado, mexa em `eyePosition.y`.
 
 1. **Meça a sala real e preencha** `roomWidth` (esquerda↔direita), `roomDepth` (traseira↔frontal)
    e `roomHeight` (do piso até a borda de cima da imagem nas paredes), em metros.
@@ -178,7 +181,8 @@ ambiente em gradiente céu/horizonte/chão, neblina e, opcionalmente, o peso de 
 ## 4. Presets de pós-processamento para testar na sala
 
 O `Global Volume` da `BaseScene` tem um `CaveVolumePresetSwitcher` com 6 perfis feitos para CAVE
-de projeção (`VolumePresets/`) mais o perfil original. Em Play Mode:
+de projeção (`VolumePresets/`) mais o perfil original. O padrão da cena é o **5 · Cor cheia
+(toon)** com o ajuste feito pela equipe na sala. Em Play Mode:
 
 | Tecla | Ação |
 | --- | --- |
@@ -194,17 +198,22 @@ paredes. Cada troca também vai para o Console.
 
 | # | Preset | Tonemap | Exposição | Contraste | Saturação | Extras | Cinza médio: tela / na sala* |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | **ACES Claro** (padrão) | ACES | +1,0 EV | +8 | +18 | matiz −3, sombras levantadas (SMH +0,06), bloom suave | 144 / 159 |
+| 1 | ACES Claro | ACES | +1,0 EV | +8 | +18 | matiz −3, sombras levantadas (SMH +0,06), bloom suave | 144 / 159 |
 | 2 | Neutro Claro | Neutral | +0,6 | +15 | +15 | cores mais fiéis, bloom mínimo | 141 / 156 |
 | 3 | Vívido p/ projeção | Neutral | +0,75 | +28 | +32 | meios-tons mais claros (gamma +0,08) | 156 / 172 |
 | 4 | Noite Hollywood | ACES | +0,75 | +10 | +8 | WB −20/−4, sombras azuis e altas luzes quentes (split toning), bloom quente | 132 / 147 |
-| 5 | Cor cheia (toon) | nenhum | +0,4 | +10 | +30 | sem bloom; luzes fortes estouram de propósito (visual "cartoon", cor chapada) | 134 / 149 |
+| 5 | **Cor cheia (toon)** (padrão) | ACES | +0,4 | +35 | +30 | ajuste da equipe na sala (era sem tonemap e contraste +10); sem bloom, cor bem saturada | 106 / 118 |
 | 6 | Quente (projetor frio) | Neutral | +0,75 | +12 | +15 | WB +12, para projetor azulado | 147 / 163 |
 | 7 | Original (`SampleSceneProfile`) | ACES | +0,5 | 0 | +24,2 | bloom forte (intensidade 1, que com HDR ligado pesa mais) | 117 / 130 |
 
 \* Valores em código sRGB (0–255) para uma superfície cinza médio (0,18), calculados com a
 implementação do URP 17.3. "Na sala" soma um véu de 25% da luz média que rebate entre paredes e
 piso — o modelo simples usado para ajustar os presets.
+
+Sobre o ajuste do preset 5: contraste +35 com ACES dá uma imagem mais forte e saturada (contraste
+na sala ~29:1, contra 14–19:1 dos outros), mas é o preset mais escuro nos meios-tons e leva para o
+preto tudo que estiver abaixo de ~6% do branco (a sombra embaixo das mesas, por exemplo). Se na sala
+ficar escuro, suba com `+`; se faltar detalhe nas sombras, baixe o contraste para ~20.
 
 **Por que estes valores (o que é específico de CAVE):**
 
@@ -227,8 +236,11 @@ piso — o modelo simples usado para ajustar os presets.
 2. Para cada preset, olhe: rostos (Ella e Louis), sombras sob as mesas, o veludo vermelho, o halo
    das lâmpadas, as quinas e o piso.
 3. Se um preset estiver quase bom, ajuste com `+`/`−` e anote o valor que aparece no rótulo.
-4. Para fixar: no `Global Volume`, escolha o `index` do `CaveVolumePresetSwitcher` em Edit Mode
-   (vira o padrão salvo na cena). Some o ajuste anotado ao *Post Exposure* do asset do preset.
+4. Para fixar, fora do Play Mode: arraste o preset para o campo de perfil do `Global Volume` **ou**
+   mude o `index` do `CaveVolumePresetSwitcher`. Os dois ficam sincronizados e salvos na cena (o
+   perfil que estiver no Volume é o que vale). Some o ajuste anotado ao *Post Exposure* do asset.
+   Atenção: o que for escolhido durante o Play Mode volta ao sair; já editar os valores de um
+   preset no Inspector (mesmo em Play) altera o arquivo do preset na hora.
 5. Os assets são editáveis no Inspector como qualquer Volume Profile. Para criar uma variação,
    duplique um preset e adicione-o à lista `presets`.
 

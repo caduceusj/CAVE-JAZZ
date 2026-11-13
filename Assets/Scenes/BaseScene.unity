@@ -6612,7 +6612,7 @@ MonoBehaviour:
   priority: 0
   blendDistance: 0
   weight: 1
-  sharedProfile: {fileID: 11400000, guid: 7e60f8f33b4140c6f71f2f1d351fca73, type: 2}
+  sharedProfile: {fileID: 11400000, guid: 480af2203addb68043475b3669f6aeea, type: 2}
 --- !u!4 &832575519
 Transform:
   m_ObjectHideFlags: 0
@@ -18803,7 +18803,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 480af2203addb68043475b3669f6aeea, type: 2}
   - {fileID: 11400000, guid: 78eda8a89ae1bf9f3df95bd1898019e2, type: 2}
   - {fileID: 11400000, guid: 10fc4df2da32a41aaa32d77bc913491c, type: 2}
-  index: 0
+  index: 4
   rawProfile: {fileID: 11400000, guid: fa4f03229aa36a67f50c37993ff3f089, type: 2}
   keyboardShortcuts: 1
   exposureStep: 0.25
